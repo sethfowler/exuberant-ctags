@@ -396,7 +396,7 @@ extern void setDefaultTagFileName (void)
 extern boolean filesRequired (void)
 {
 	boolean result = FilesRequired;
-	if (Option.recurse)
+	if (Option.recurse || Option.stdinFileName)
 		result = FALSE;
 	return result;
 }
@@ -959,6 +959,17 @@ static void processLanguageForceOption (
 	else
 		Option.language = language;
 }
+
+static void processStdinFileName (
+    const char *const option, const char *const parameter)
+{
+  if (strlen(parameter) == 0) {
+    error (FATAL, "No filename specified for --stdin-filename");
+  }
+
+  Option.stdinFileName = stringCopy(parameter);
+}
+
 static char* skipPastMap (char* p)
 {
 	while (*p != EXTENSION_SEPARATOR  &&
@@ -1391,6 +1402,7 @@ static parametricOption ParametricOptions [] = {
 	{ "options",                processOptionFile,              FALSE   },
 	{ "sort",                   processSortOption,              TRUE    },
 	{ "version",                processVersionOption,           TRUE    },
+	{ "stdin-filename",         processStdinFileName,           FALSE   }
 };
 
 static booleanOption BooleanOptions [] = {
@@ -1818,6 +1830,7 @@ extern void freeOptionResources (void)
 	freeString (&Option.tagFileName);
 	freeString (&Option.fileList);
 	freeString (&Option.filterTerminator);
+	freeString (&Option.stdinFileName);
 
 	freeList (&Excluded);
 	freeList (&Option.ignore);
