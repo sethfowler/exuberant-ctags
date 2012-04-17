@@ -1718,80 +1718,16 @@ static void skipStatement (statementInfo *const st)
  *
  *	To simplify the implementation, we just read forward until we find a '{' character.
  */
-static void skipTypeConstraints (tokenInfo *const token, statementInfo *const st)
+static void skipTypeConstraints ()
 {
 	int c;
-	boolean done = FALSE;
-
-	if (1)
-	{
-		do
-		{
-			c = skipToNonWhite ();
-		} while (c != '{');
-		cppUngetc (c);
-		return;
-	}
 
 	do
 	{
 		c = skipToNonWhite ();
-
-		if (c != EOF && isident1 (c))
-		{
-			readIdentifier (token, c);
-			if (! isType (token, TOKEN_NAME))
-				done = TRUE;  /* An identifier is required here. */
-		}
-
-		if (! done)
-		{
-			c = skipToNonWhite ();
-			if (c != ':')
-				done = TRUE;  /* A colon is required. */
-		}
-
-		if (! done)
-		{
-			c = skipToNonWhite ();
-
-			if (c != EOF && isident1 (c))
-			{
-				readIdentifier (token, c);
-				switch (token->keyword)
-				{
-				case KEYWORD_STRUCT:                break;
-				case KEYWORD_CLASS:                 break;
-				case KEYWORD_NEW:    skipParens (); break;
-				default:
-					if (isType (token, TOKEN_KEYWORD))
-						done = TRUE; /* Any other keyword is illegal here. */
-					else if (isType (token, TOKEN_NAME))
-						;			 /* An identifier is fine. */
-					else
-						done = TRUE; /* Anything else means we're done. */
-					break;
-				}
-			}
-		}
-
-		if (! done)
-		{
-			c = skipToNonWhite ();
-
-			if (isident1 (c))
-			{
-				readIdentifier (token, c);
-
-				/* Anything but 'where' means we're done. */
-				if (token->keyword != KEYWORD_WHERE)
-					done = TRUE;
-			}
-			else
-				done = TRUE; /* A non-identifier means we're done. */
-		}
-	} while (! done);
+	} while (c != '{');
 	cppUngetc (c);
+	return;
 }
 
 static void processInterface (statementInfo *const st)
@@ -1855,7 +1791,7 @@ static void processToken (tokenInfo *const token, statementInfo *const st)
 
 		case KEYWORD_WHERE:
 			if (isLanguage (Lang_csharp))
-				skipTypeConstraints(token, st);
+				skipTypeConstraints ();
 			break;
 		
 		case KEYWORD_EVENT:
@@ -2030,7 +1966,7 @@ static boolean skipPostArgumentStuff (
 
 				case KEYWORD_WHERE:
 					if (isLanguage (Lang_csharp))
-						skipTypeConstraints(token, st);
+						skipTypeConstraints ();
 					break;
 
 				case KEYWORD_CONST:
