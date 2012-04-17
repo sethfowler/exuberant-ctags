@@ -91,7 +91,7 @@ typedef enum eKeywordId {
 	KEYWORD_UINT, KEYWORD_ULONG, KEYWORD_UNION, KEYWORD_UNSIGNED, KEYWORD_USHORT,
 	KEYWORD_USING,
 	KEYWORD_VIRTUAL, KEYWORD_VOID, KEYWORD_VOLATILE,
-	KEYWORD_WCHAR_T, KEYWORD_WHILE
+	KEYWORD_WCHAR_T, KEYWORD_WHERE, KEYWORD_WHILE
 } keywordId;
 
 /*  Used to determine whether keyword is valid for the current language and
@@ -459,6 +459,7 @@ static const keywordDesc KeywordTable [] = {
 	{ "void",           KEYWORD_VOID,           { 1, 1, 1, 1, 1 } },
 	{ "volatile",       KEYWORD_VOLATILE,       { 1, 1, 1, 1, 0 } },
 	{ "wchar_t",        KEYWORD_WCHAR_T,        { 1, 1, 1, 0, 0 } },
+	{ "where",          KEYWORD_WHERE,          { 0, 0, 1, 0, 0 } },
 	{ "while",          KEYWORD_WHILE,          { 1, 1, 1, 1, 0 } }
 };
 
@@ -1862,6 +1863,59 @@ static void skipMemIntializerList (tokenInfo *const token)
 	cppUngetc (c);
 }
 
+/*  Skips over a C# type parameter constraint list, of the form:
+ *
+ *  type-parameter-constraint-list:
+ *	  ('where' identifier ':' constraint)+
+ *
+ *  constraint:
+ *	  'struct' | 'class' | 'new' '(' ')' | identifier
+ */
+static void skipTypeConstraints (tokenInfo *const token)
+{
+	int c;
+	boolean done = FALSE;
+
+	do
+	{
+		c = skipToNonWhite ();
+
+		if (c != EOF && isident1 (c))
+		{
+			readIdentifier (token, c);
+			switch (token->keyword)
+			{
+			case KEYWORD_STRUCT:                break;
+			case KEYWORD_CLASS:                 break;
+			case KEYWORD_NEW:    skipParens (); break;
+			default:
+				if (isType (token, TOKEN_KEYWORD))
+					done = TRUE; /* Any other keyword is illegal here. */
+				else if (isType (token, TOKEN_NAME))
+					;			 /* An identifier is fine. */
+				else
+					done = TRUE; /* Anything else means we're done. */
+				break;
+			}
+		}
+
+		if (! done)
+		{
+			c = skipToNonWhite ();
+
+			if (isident1 (c))
+			{
+				readIdentifier (token, c);
+
+				/* Anything but 'where' means we're done. */
+				if (token->keyword != KEYWORD_WHERE)
+					done = TRUE;
+			}
+		}
+	} while (! done);
+	cppUngetc (c);
+}
+
 static void skipMacro (statementInfo *const st)
 {
 	tokenInfo *const prev2 = prevToken (st, 2);
@@ -1885,6 +1939,9 @@ static void skipMacro (statementInfo *const st)
  *    int foo (...) [const|volatile] [throw (...)] [ctor-initializer] {...}
  *    int foo (...) [const|volatile] [throw (...)] try [ctor-initializer] {...}
  *        catch (...) {...}
+ *  C#:
+ *	  int foo (...);
+ *	  int foo [<T, ...>] (...) [where ...] {...}
  */
 static boolean skipPostArgumentStuff (
 		statementInfo *const st, parenInfo *const info)
@@ -1929,9 +1986,11 @@ static boolean skipPostArgumentStuff (
 				readIdentifier (token, c);
 				switch (token->keyword)
 				{
-				case KEYWORD_ATTRIBUTE: skipParens ();  break;
-				case KEYWORD_THROW:     skipParens ();  break;
-				case KEYWORD_TRY:                       break;
+				case KEYWORD_ATTRIBUTE: skipParens ();               break;
+				case KEYWORD_THROW:     skipParens ();               break;
+				case KEYWORD_TRY:                                    break;
+
+				case KEYWORD_WHERE:     skipTypeConstraints (token); break;
 
 				case KEYWORD_CONST:
 				case KEYWORD_VOLATILE:
