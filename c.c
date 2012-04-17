@@ -1708,6 +1708,92 @@ static void skipStatement (statementInfo *const st)
 	skipToOneOf (";");
 }
 
+/*  Skips over a C# type parameter constraint list, of the form:
+ *
+ *  type-parameter-constraint-list:
+ *	  ('where' identifier ':' constraint)+
+ *
+ *  constraint:
+ *	  'struct' | 'class' | 'new' '(' ')' | identifier
+ *
+ *	To simplify the implementation, we just read forward until we find a '{' character.
+ */
+static void skipTypeConstraints (tokenInfo *const token, statementInfo *const st)
+{
+	int c;
+	boolean done = FALSE;
+
+	if (1)
+	{
+		do
+		{
+			c = skipToNonWhite ();
+		} while (c != '{');
+		cppUngetc (c);
+		return;
+	}
+
+	do
+	{
+		c = skipToNonWhite ();
+
+		if (c != EOF && isident1 (c))
+		{
+			readIdentifier (token, c);
+			if (! isType (token, TOKEN_NAME))
+				done = TRUE;  /* An identifier is required here. */
+		}
+
+		if (! done)
+		{
+			c = skipToNonWhite ();
+			if (c != ':')
+				done = TRUE;  /* A colon is required. */
+		}
+
+		if (! done)
+		{
+			c = skipToNonWhite ();
+
+			if (c != EOF && isident1 (c))
+			{
+				readIdentifier (token, c);
+				switch (token->keyword)
+				{
+				case KEYWORD_STRUCT:                break;
+				case KEYWORD_CLASS:                 break;
+				case KEYWORD_NEW:    skipParens (); break;
+				default:
+					if (isType (token, TOKEN_KEYWORD))
+						done = TRUE; /* Any other keyword is illegal here. */
+					else if (isType (token, TOKEN_NAME))
+						;			 /* An identifier is fine. */
+					else
+						done = TRUE; /* Anything else means we're done. */
+					break;
+				}
+			}
+		}
+
+		if (! done)
+		{
+			c = skipToNonWhite ();
+
+			if (isident1 (c))
+			{
+				readIdentifier (token, c);
+
+				/* Anything but 'where' means we're done. */
+				if (token->keyword != KEYWORD_WHERE)
+					done = TRUE;
+			}
+			else
+				done = TRUE; /* A non-identifier means we're done. */
+		}
+	} while (! done);
+	cppUngetc (c);
+}
+
 static void processInterface (statementInfo *const st)
 {
 	st->declaration = DECL_INTERFACE;
@@ -1766,6 +1852,11 @@ static void processToken (tokenInfo *const token, statementInfo *const st)
 		
 		case KEYWORD_NAMESPACE: readPackageOrNamespace (st, DECL_NAMESPACE); break;
 		case KEYWORD_PACKAGE:   readPackageOrNamespace (st, DECL_PACKAGE);   break;
+
+		case KEYWORD_WHERE:
+			if (isLanguage (Lang_csharp))
+				skipTypeConstraints(token, st);
+			break;
 		
 		case KEYWORD_EVENT:
 			if (isLanguage (Lang_csharp))
@@ -1863,59 +1954,6 @@ static void skipMemIntializerList (tokenInfo *const token)
 	cppUngetc (c);
 }
 
-/*  Skips over a C# type parameter constraint list, of the form:
- *
- *  type-parameter-constraint-list:
- *	  ('where' identifier ':' constraint)+
- *
- *  constraint:
- *	  'struct' | 'class' | 'new' '(' ')' | identifier
- */
-static void skipTypeConstraints (tokenInfo *const token)
-{
-	int c;
-	boolean done = FALSE;
-
-	do
-	{
-		c = skipToNonWhite ();
-
-		if (c != EOF && isident1 (c))
-		{
-			readIdentifier (token, c);
-			switch (token->keyword)
-			{
-			case KEYWORD_STRUCT:                break;
-			case KEYWORD_CLASS:                 break;
-			case KEYWORD_NEW:    skipParens (); break;
-			default:
-				if (isType (token, TOKEN_KEYWORD))
-					done = TRUE; /* Any other keyword is illegal here. */
-				else if (isType (token, TOKEN_NAME))
-					;			 /* An identifier is fine. */
-				else
-					done = TRUE; /* Anything else means we're done. */
-				break;
-			}
-		}
-
-		if (! done)
-		{
-			c = skipToNonWhite ();
-
-			if (isident1 (c))
-			{
-				readIdentifier (token, c);
-
-				/* Anything but 'where' means we're done. */
-				if (token->keyword != KEYWORD_WHERE)
-					done = TRUE;
-			}
-		}
-	} while (! done);
-	cppUngetc (c);
-}
-
 static void skipMacro (statementInfo *const st)
 {
 	tokenInfo *const prev2 = prevToken (st, 2);
@@ -1990,7 +2028,10 @@ static boolean skipPostArgumentStuff (
 				case KEYWORD_THROW:     skipParens ();               break;
 				case KEYWORD_TRY:                                    break;
 
-				case KEYWORD_WHERE:     skipTypeConstraints (token); break;
+				case KEYWORD_WHERE:
+					if (isLanguage (Lang_csharp))
+						skipTypeConstraints(token, st);
+					break;
 
 				case KEYWORD_CONST:
 				case KEYWORD_VOLATILE:
@@ -2760,7 +2801,17 @@ static void tagCheck (statementInfo *const st)
 					st->declaration == DECL_PROGRAM)
 			{
 				if (isType (prev, TOKEN_NAME))
+				{
 					copyToken (st->blockName, prev);
+					qualifyBlockTag (st, prev);
+				}
+				else if (isLanguage (Lang_csharp) && prev->keyword == KEYWORD_WHERE)
+				{
+					/* If we just handled a C# generic type constraint list,
+					 * the token containing the class name will be in prev2. */
+					copyToken (st->blockName, prev2);
+					qualifyBlockTag (st, prev2);
+				}
 				else
 				{
 					/*  For an anonymous struct or union we use a unique ID
@@ -2771,8 +2822,8 @@ static void tagCheck (statementInfo *const st)
 					vStringCopyS (st->blockName->name, buf);
 					st->blockName->type = TOKEN_NAME;
 					st->blockName->keyword = KEYWORD_NONE;
+					qualifyBlockTag (st, prev);
 				}
-				qualifyBlockTag (st, prev);
 			}
 			else if (isLanguage (Lang_csharp))
 				makeTag (prev, st, FALSE, TAG_PROPERTY);
