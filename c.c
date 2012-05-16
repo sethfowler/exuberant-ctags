@@ -1725,7 +1725,7 @@ static void skipTypeConstraints ()
 	do
 	{
 		c = skipToNonWhite ();
-	} while (c != '{');
+	} while (c != EOF && c != '{');
 	cppUngetc (c);
 	return;
 }
